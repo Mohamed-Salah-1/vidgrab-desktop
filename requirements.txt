@@ -1,0 +1,2 @@
+PySide6-Essentials>=6.9
+yt-dlp[default,curl-cffi]>=2025.1.1
