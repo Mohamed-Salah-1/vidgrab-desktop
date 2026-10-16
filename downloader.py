@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 from typing import Any
 
 import yt_dlp
@@ -93,6 +94,26 @@ _SUBTITLE_ERROR_MARKERS = (
     "unable to download subtitles",
     "some subtitles could not be",
 )
+
+
+_TRANSIENT_HTTP_MARKERS = (
+    "http error 403",
+    "http error 429",
+    "403 forbidden",
+    "429 too many requests",
+)
+
+
+def is_transient_http_error(exc: BaseException | str) -> bool:
+    """True for HTTP 403/429 failures that are usually transient.
+
+    YouTube's media servers hand out expiring, throttled URLs; a 403 in
+    the middle of (or at the start of) a download often clears up when
+    the URLs are re-requested a few seconds later. Callers use this to
+    retry the whole download with freshly extracted URLs.
+    """
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_HTTP_MARKERS)
 
 
 def is_subtitle_error(exc: BaseException | str) -> bool:
@@ -405,10 +426,25 @@ class DownloadWorker(QObject):
                 )
 
         self.options.setdefault("progress_hooks", []).append(hook)
-        try:
-            path = self._download()
-        except Exception as exc:  # noqa: BLE001 - surface any yt-dlp error
-            path = self._recover(exc)
-            if path is None:
-                return
+        attempts = 3
+        path: str | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                path = self._download()
+                break
+            except Exception as exc:  # noqa: BLE001 - retry or recover below
+                if is_transient_http_error(exc) and attempt < attempts:
+                    wait = attempt * 3
+                    short = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                    self.note.emit(
+                        f"⚠️ Transient server error ({short}); fetching "
+                        f"fresh links and retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{attempts}) ..."
+                    )
+                    time.sleep(wait)
+                    continue
+                path = self._recover(exc)
+                break
+        if path is None:
+            return
         self.finished.emit(path)

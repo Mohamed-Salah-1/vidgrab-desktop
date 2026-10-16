@@ -914,6 +914,20 @@ class MainWindow(QMainWindow):
 
     def _cookie_hint(self, message: str) -> str:
         lowered = message.lower()
+        if "403" in lowered or "forbidden" in lowered:
+            return (
+                "🚫 The video server refused the request (HTTP 403). This is "
+                "usually YouTube's transient throttling, not a broken link -- "
+                "VidGrab already retried with fresh links. Wait a minute and "
+                "try Download again; if it persists, pick a lower quality, "
+                "or add cookies (logged-in requests are throttled less)."
+            )
+        if "429" in lowered or "too many requests" in lowered:
+            return (
+                "⏳ The site is rate-limiting requests (HTTP 429). Wait a few "
+                "minutes and try again; adding cookies can also help, since "
+                "logged-in requests are limited less strictly."
+            )
         if "cannot parse data" in lowered and "facebook" in lowered:
             return (
                 "Facebook did not return this video to an anonymous request -- "
