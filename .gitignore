@@ -6,3 +6,6 @@ __pycache__/
 .claude/
 vendor/ffmpeg.exe
 VidGrab.spec
+announce-fb-page.md
+announce-fb-group.md
+announce-yt-description.md
