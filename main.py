@@ -11,8 +11,8 @@ from __future__ import annotations
 import os
 import sys
 
-from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QFont, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -839,8 +839,68 @@ class MainWindow(QMainWindow):
     def _on_download_finished(self, path: str) -> None:
         self.progress.setValue(100)
         self.progress.setFormat("Done 🎉")
-        self._log(f"🎉 Finished: {path or 'download complete'}")
-        QMessageBox.information(self, "🎉 Download complete", path or "Done.")
+        resolved = self._resolve_download_path(path)
+        self._log(f"🎉 Finished: {resolved or path or 'download complete'}")
+        if not resolved:
+            QMessageBox.information(
+                self, "🎉 Download complete", path or "Done."
+            )
+            return
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("🎉 Download complete")
+        box.setText(f"Saved to:\n{resolved}")
+        open_file_btn = box.addButton(
+            "▶️ Open file", QMessageBox.ButtonRole.ActionRole
+        )
+        open_folder_btn = box.addButton(
+            "📂 Open folder", QMessageBox.ButtonRole.ActionRole
+        )
+        box.addButton(QMessageBox.StandardButton.Ok)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == open_file_btn:
+            self._open_file(resolved)
+        elif clicked == open_folder_btn:
+            self._open_folder(resolved)
+
+    @staticmethod
+    def _resolve_download_path(path: str) -> str:
+        """Return the real file on disk (merge may change the extension)."""
+        if path and os.path.isfile(path):
+            return path
+        if not path:
+            return ""
+        base, _ = os.path.splitext(path)
+        for ext in (".mp4", ".mkv", ".m4a", ".mp3", ".webm", ".opus"):
+            candidate = base + ext
+            if os.path.isfile(candidate):
+                return candidate
+        folder = os.path.dirname(path)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        if folder and os.path.isdir(folder) and stem:
+            matches = [
+                f for f in os.listdir(folder) if f.startswith(stem)
+            ]
+            if matches:
+                matches.sort()
+                return os.path.join(folder, matches[0])
+        return path if path else ""
+
+    def _open_file(self, path: str) -> None:
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+            self._log(f"⚠️ Could not open file: {path}")
+            QMessageBox.warning(
+                self, "⚠️ Cannot open file", f"Could not open:\n{path}"
+            )
+
+    def _open_folder(self, path: str) -> None:
+        folder = os.path.dirname(path) or path
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(folder)):
+            self._log(f"⚠️ Could not open folder: {folder}")
+            QMessageBox.warning(
+                self, "⚠️ Cannot open folder", f"Could not open:\n{folder}"
+            )
 
     def _on_error(self, message: str) -> None:
         self._stop_analyze_animation(ok=False)
